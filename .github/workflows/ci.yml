@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [ main ]
+    branches: [ release-7.x ]
   pull_request:
-    branches: [ main ]
+    branches: [ release-7.x ]
 
 jobs:
 
@@ -25,6 +25,13 @@ jobs:
 
       - name: Prepare environment
         run: |
+
+          # Install Linux packages
+          #
+          # List of packages pre-installed in the runner:
+          # https://docs.github.com/en/free-pro-team@latest/actions/reference/specifications-for-github-hosted-runners#supported-software
+
+          sudo apt install -y expect
 
           # Enable support for Compose V2
           #
@@ -56,9 +63,25 @@ jobs:
       - name: Set password of every built-in user to 'testpasswd'
         run: |
 
-          sed -i -e 's/\(ELASTIC_PASSWORD=\)'\''changeme'\''/\1testpasswd/g' \
-                 -e 's/\(LOGSTASH_INTERNAL_PASSWORD=\)'\''changeme'\''/\1testpasswd/g' \
-                 -e 's/\(KIBANA_SYSTEM_PASSWORD=\)'\''changeme'\''/\1testpasswd/g' .env
+          # Change password of 'elastic' user from 'changeme' to 'testpasswd' in config files
+
+          sed -i -e 's/\(xpack.monitoring.elasticsearch.username:\) elastic/\1 logstash_system/g' -e 's/\(xpack.monitoring.elasticsearch.password:\) '\''changeme'\''/\1 testpasswd/g' logstash/config/logstash.yml
+          sed -i 's/\(password =>\) "changeme"/\1 "testpasswd"/g' logstash/pipeline/logstash.conf
+          sed -i -e 's/\(elasticsearch.username:\) elastic/\1 kibana_system/g' -e 's/\(elasticsearch.password:\) '\''changeme'\''/\1 testpasswd/g' kibana/config/kibana.yml
+          sed -i 's/\(elasticsearch.password:\) '\''changeme'\''/\1 testpasswd/g' extensions/enterprise-search/config/enterprise-search.yml
+          sed -i 's/\(password:\) '\''changeme'\''/\1 testpasswd/g' extensions/apm-server/config/apm-server.yml
+          sed -i 's/\(password:\) '\''changeme'\''/\1 testpasswd/g' extensions/metricbeat/config/metricbeat.yml
+          sed -i 's/\(password:\) '\''changeme'\''/\1 testpasswd/g' extensions/filebeat/config/filebeat.yml
+
+          # Run Elasticsearch and wait for its availability
+
+          docker compose up -d elasticsearch
+          source .github/workflows/scripts/lib/testing.sh
+          poll_ready "$(container_id elasticsearch)" "http://$(service_ip elasticsearch):9200/" -u 'elastic:changeme'
+
+          # Set passwords
+
+          .github/workflows/scripts/elasticsearch-setup-passwords.exp
 
       ##########################################################
       #                                                        #
@@ -78,7 +101,6 @@ jobs:
         if: always()
         run: |
           docker compose ps
-          docker compose logs setup
           docker compose logs elasticsearch
           docker compose logs logstash
           docker compose logs kibana

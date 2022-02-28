@@ -1,15 +1,15 @@
 # Elastic stack (ELK) on Docker
 
-[![Elastic Stack version](https://img.shields.io/badge/Elastic%20Stack-8.0.0-00bfb3?style=flat&logo=elastic-stack)](https://www.elastic.co/blog/category/releases)
-[![Build Status](https://github.com/deviantony/docker-elk/workflows/CI/badge.svg?branch=main)](https://github.com/deviantony/docker-elk/actions?query=workflow%3ACI+branch%3Amain)
+[![Elastic Stack version](https://img.shields.io/badge/Elastic%20Stack-7.17.0-00bfb3?style=flat&logo=elastic-stack)](https://www.elastic.co/blog/category/releases)
+[![Build Status](https://github.com/deviantony/docker-elk/workflows/CI/badge.svg?branch=release-7.x)](https://github.com/deviantony/docker-elk/actions?query=workflow%3ACI+branch%3Arelease-7.x)
 [![Join the chat at https://gitter.im/deviantony/docker-elk](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/deviantony/docker-elk?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
 
-Run the latest version of the [Elastic stack][elk-stack] with Docker and Docker Compose.
+Run the version 7.x of the [Elastic stack][elk-stack] with Docker and Docker Compose.
 
 It gives you the ability to analyze any data set by using the searching/aggregation capabilities of Elasticsearch and
 the visualization power of Kibana.
 
-![Animated demo](https://user-images.githubusercontent.com/3299086/155972072-0c89d6db-707a-47a1-818b-5f976565f95a.gif)
+![Animated demo](https://user-images.githubusercontent.com/3299086/140641708-cea70d17-cc04-459f-89d9-3fcb5c58bc35.gif)
 
 *:information_source: The Docker images backing this stack include [X-Pack][xpack] with [paid features][paid-features]
 enabled by default (see [How to disable paid features](#how-to-disable-paid-features) to disable them). **The [trial
@@ -18,9 +18,9 @@ seamlessly, without losing any data.*
 
 Based on the official Docker images from Elastic:
 
-* [Elasticsearch](https://github.com/elastic/elasticsearch/tree/master/distribution/docker)
-* [Logstash](https://github.com/elastic/logstash/tree/master/docker)
-* [Kibana](https://github.com/elastic/kibana/tree/master/src/dev/build/tasks/os_packages/docker_generator)
+* [Elasticsearch](https://github.com/elastic/elasticsearch/tree/7.17/distribution/docker)
+* [Logstash](https://github.com/elastic/logstash/tree/7.17/docker)
+* [Kibana](https://github.com/elastic/kibana/tree/7.17/src/dev/build/tasks/os_packages/docker_generator)
 
 Other available stack variants:
 
@@ -33,8 +33,7 @@ Other available stack variants:
 
 We aim at providing the simplest possible entry into the Elastic stack for anybody who feels like experimenting with
 this powerful combo of technologies. This project's default configuration is purposely minimal and unopinionated. It
-does not rely on any external dependency, and uses as little custom automation as necessary to get things up and
-running.
+does not rely on any external dependency or custom automation to get things up and running.
 
 Instead, we believe in good documentation so that you can use this repository as a template, tweak it, and make it _your
 own_. [sherifabdlnaby/elastdocker][elastdocker] is one example among others of project that builds upon this idea.
@@ -53,6 +52,7 @@ own_. [sherifabdlnaby/elastdocker][elastdocker] is one example among others of p
    * [Initial setup](#initial-setup)
      * [Setting up user authentication](#setting-up-user-authentication)
      * [Injecting data](#injecting-data)
+     * [Default Kibana index pattern creation](#default-kibana-index-pattern-creation)
    * [Cleanup](#cleanup)
    * [Version selection](#version-selection)
 1. [Configuration](#configuration)
@@ -75,8 +75,8 @@ own_. [sherifabdlnaby/elastdocker][elastdocker] is one example among others of p
 
 ### Host setup
 
-* [Docker Engine](https://docs.docker.com/install/) version **18.06.0** or newer
-* [Docker Compose](https://docs.docker.com/compose/install/) version **1.26.0** or newer
+* [Docker Engine](https://docs.docker.com/install/) version **17.05.0** or newer
+* [Docker Compose](https://docs.docker.com/compose/install/) version **1.20.0** or newer
 * 1.5 GB of RAM
 
 *:information_source: Especially on Linux, make sure your user has the [required permissions][linux-postinstall] to
@@ -131,68 +131,54 @@ browser and use the following (default) credentials to log in:
 * user: *elastic*
 * password: *changeme*
 
-*:information_source: Upon the initial startup, the `elastic`, `logstash_internal` and `kibana_system` Elasticsearch
-users are intialized with the values of the passwords defined in the [`.env`](.env) file (_"changeme"_ by default). The
-first one is the [built-in superuser][builtin-users], the other two are used by Kibana and Logstash respectively to
-communicate with Elasticsearch. This task is only performed during the _initial_ startup of the stack. To change users'
-passwords _after_ they have been initialized, please refer to the instructions in the next section.*
+*:information_source: Upon the initial startup, the `elastic` [built-in superuser][builtin-users] is intialized with the
+value of the password defined in the Compose file `docker-compose.yml` (_"changeme"_ by default). This task is only
+performed during the _initial_ startup of the stack. To change users' passwords _after_ they have been initialized,
+please refer to the instructions in the next section.*
 
 ### Initial setup
 
 #### Setting up user authentication
 
-*:information_source: Refer to [Security settings in Elasticsearch][es-security] to disable authentication.*
+*:information_source: Refer to [How to disable paid features](#how-to-disable-paid-features) to disable authentication.*
 
-**:warning: Starting with Elastic v8.0.0, it is no longer possible to run Kibana using the bootstraped privileged
-`elastic` user.**
+The stack is pre-configured with the `elastic` **privileged** bootstrap user. The _"changeme"_ password set by default
+for this user is **unsecure**. For increased security, we will reset it to a random secret.
 
-The _"changeme"_ password set by default for all aforementioned users is **unsecure**. For increased security, we will
-reset the passwords of all aforementioned Elasticsearch users to random secrets.
+Although all stack components work out-of-the-box with this user, we strongly recommend using the unprivileged [built-in
+users][builtin-users] instead for increased security, as described below.
 
-1. Reset passwords for default users
-
-    The commands below resets the passwords of the `elastic`, `logstash_internal` and `kibana_system` users. Take note
-    of them.
+1. Initialize passwords for built-in users
 
     ```console
-    $ docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --user elastic
+    $ docker-compose exec -T elasticsearch bin/elasticsearch-setup-passwords auto --batch
     ```
 
-    ```console
-    $ docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --user logstash_internal
-    ```
+    Passwords for all 6 built-in users will be randomly generated. Take note of them.
 
-    ```console
-    $ docker-compose exec elasticsearch bin/elasticsearch-reset-password --batch --user kibana_system
-    ```
+1. Unset the bootstrap password (_optional_)
 
-    If the need for it arises (e.g. if you want to [collect monitoring information][ls-monitoring] through Beats and
-    other components), feel free to repeat this operation at any time for the rest of the [built-in
-    users][builtin-users].
+    Remove the `ELASTIC_PASSWORD` environment variable from the `elasticsearch` service inside the Compose file
+    (`docker-compose.yml`). It is only used to initialize the keystore during the initial startup of Elasticsearch.
 
 1. Replace usernames and passwords in configuration files
 
-    Replace the password of the `elastic` user inside the `.env` file with the password generated in the previous step.
-    Its value isn't used by any core component, but [extensions](#how-to-enable-the-provided-extensions) use it to
-    connect to Elasticsearch.
+    Use the `kibana_system` user (`kibana` for releases <7.8.0) inside the Kibana configuration file
+    (`kibana/config/kibana.yml`) and the `logstash_system` user inside the Logstash configuration file
+    (`logstash/config/logstash.yml`) in place of the existing `elastic` user.
 
-    *:information_source: In case you don't plan on using any of the provided
-    [extensions](#how-to-enable-the-provided-extensions), or prefer to create your own roles and users to authenticate
-    these services, it is safe to remove the `ELASTIC_PASSWORD` entry from the `.env` file altogether after the stack
-    has been initialized.*
+    Replace the password of the `elastic` user inside the Logstash pipeline file (`logstash/pipeline/logstash.conf`).
 
-    Replace the password of the `logstash_internal` user inside the `.env` file with the password generated in the
-    previous step. Its value is referenced inside the Logstash pipeline file (`logstash/pipeline/logstash.conf`).
-
-    Replace the password of the `kibana_system` user inside the `.env` file with the password generated in the previous
-    step. Its value is referenced inside the Kibana configuration file (`kibana/config/kibana.yml`).
+    *:information_source: Do not use the `logstash_system` user inside the Logstash **pipeline** file, it does not have
+    sufficient permissions to create indices. Follow the instructions at [Configuring Security in Logstash][ls-security]
+    to create a user with suitable roles.*
 
     See the [Configuration](#configuration) section below for more information about these configuration files.
 
 1. Restart Logstash and Kibana to re-connect to Elasticsearch using the new passwords
 
     ```console
-    $ docker-compose up -d logstash kibana
+    $ docker-compose restart kibana logstash
     ```
 
 *:information_source: Learn more about the security of the Elastic stack at [Secure the Elastic Stack][sec-cluster].*
@@ -219,6 +205,37 @@ $ cat /path/to/logfile.log | nc -c localhost 5000
 
 You can also load the sample data provided by your Kibana installation.
 
+#### Default Kibana index pattern creation
+
+When Kibana launches for the first time, it is not configured with any index pattern.
+
+##### Via the Kibana web UI
+
+*:information_source: You need to inject data into Logstash before being able to configure a Logstash index pattern via
+the Kibana web UI.*
+
+Navigate to the _Discover_ view of Kibana from the left sidebar. You will be prompted to create an index pattern. Enter
+`logstash-*` to match Logstash indices then, on the next page, select `@timestamp` as the time filter field. Finally,
+click _Create index pattern_ and return to the _Discover_ view to inspect your log entries.
+
+Refer to [Connect Kibana with Elasticsearch][connect-kibana] and [Creating an index pattern][index-pattern] for detailed
+instructions about the index pattern configuration.
+
+##### On the command line
+
+Create an index pattern via the Kibana API:
+
+```console
+$ curl -XPOST -D- 'http://localhost:5601/api/saved_objects/index-pattern' \
+    -H 'Content-Type: application/json' \
+    -H 'kbn-version: 7.17.0' \
+    -u elastic:<your generated elastic password> \
+    -d '{"attributes":{"title":"logstash-*","timeFieldName":"@timestamp"}}'
+```
+
+The created pattern will automatically be marked as the default index pattern as soon as the Kibana UI is opened for the
+first time.
+
 ### Cleanup
 
 Elasticsearch data is persisted inside a volume by default.
@@ -231,21 +248,12 @@ $ docker-compose down -v
 
 ### Version selection
 
-This repository stays aligned with the latest version of the Elastic stack. The `main` branch tracks the current major
-version (8.x).
-
 To use a different version of the core Elastic components, simply change the version number inside the [`.env`](.env)
 file. If you are upgrading an existing stack, remember to rebuild all container images using the `docker-compose build`
 command.
 
 **:warning: Always pay attention to the [official upgrade instructions][upgrade] for each individual component before
 performing a stack upgrade.**
-
-Older major versions are also supported on separate branches:
-
-* [`release-7.x`](https://github.com/deviantony/docker-elk/tree/release-7.x): 7.x series
-* [`release-6.x`](https://github.com/deviantony/docker-elk/tree/release-6.x): 6.x series (End-of-life)
-* [`release-5.x`](https://github.com/deviantony/docker-elk/tree/release-5.x): 5.x series (End-of-life)
 
 ## Configuration
 
@@ -402,34 +410,33 @@ See the following Wiki pages:
 [elk-stack]: https://www.elastic.co/what-is/elk-stack
 [xpack]: https://www.elastic.co/what-is/open-x-pack
 [paid-features]: https://www.elastic.co/subscriptions
-[es-security]: https://www.elastic.co/guide/en/elasticsearch/reference/current/security-settings.html
-[trial-license]: https://www.elastic.co/guide/en/elasticsearch/reference/current/license-settings.html
-[license-mngmt]: https://www.elastic.co/guide/en/kibana/current/managing-licenses.html
-[license-apis]: https://www.elastic.co/guide/en/elasticsearch/reference/current/licensing-apis.html
+[trial-license]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/license-settings.html
+[license-mngmt]: https://www.elastic.co/guide/en/kibana/7.17/managing-licenses.html
+[license-apis]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/licensing-apis.html
 
 [elastdocker]: https://github.com/sherifabdlnaby/elastdocker
 
 [linux-postinstall]: https://docs.docker.com/install/linux/linux-postinstall/
 
-[booststap-checks]: https://www.elastic.co/guide/en/elasticsearch/reference/current/bootstrap-checks.html
-[es-sys-config]: https://www.elastic.co/guide/en/elasticsearch/reference/current/system-config.html
+[booststap-checks]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/bootstrap-checks.html
+[es-sys-config]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/system-config.html
 
 [win-filesharing]: https://docs.docker.com/desktop/windows/#file-sharing
 [mac-filesharing]: https://docs.docker.com/desktop/mac/#file-sharing
 
-[builtin-users]: https://www.elastic.co/guide/en/elasticsearch/reference/current/built-in-users.html
-[ls-monitoring]: https://www.elastic.co/guide/en/logstash/current/monitoring-with-metricbeat.html
-[sec-cluster]: https://www.elastic.co/guide/en/elasticsearch/reference/current/secure-cluster.html
+[builtin-users]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/built-in-users.html
+[ls-security]: https://www.elastic.co/guide/en/logstash/7.17/ls-security.html
+[sec-cluster]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/secure-cluster.html
 
-[connect-kibana]: https://www.elastic.co/guide/en/kibana/current/connect-to-elasticsearch.html
-[index-pattern]: https://www.elastic.co/guide/en/kibana/current/index-patterns.html
+[connect-kibana]: https://www.elastic.co/guide/en/kibana/7.17/connect-to-elasticsearch.html
+[index-pattern]: https://www.elastic.co/guide/en/kibana/7.17/index-patterns.html
 
 [config-es]: ./elasticsearch/config/elasticsearch.yml
 [config-kbn]: ./kibana/config/kibana.yml
 [config-ls]: ./logstash/config/logstash.yml
 
-[es-docker]: https://www.elastic.co/guide/en/elasticsearch/reference/current/docker.html
-[kbn-docker]: https://www.elastic.co/guide/en/kibana/current/docker.html
-[ls-docker]: https://www.elastic.co/guide/en/logstash/current/docker-config.html
+[es-docker]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/docker.html
+[kbn-docker]: https://www.elastic.co/guide/en/kibana/7.17/docker.html
+[ls-docker]: https://www.elastic.co/guide/en/logstash/7.17/docker-config.html
 
-[upgrade]: https://www.elastic.co/guide/en/elasticsearch/reference/current/setup-upgrade.html
+[upgrade]: https://www.elastic.co/guide/en/elasticsearch/reference/7.17/setup-upgrade.html
